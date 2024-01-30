@@ -1,4 +1,5 @@
 mod freelist;
+mod fileheader;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right
