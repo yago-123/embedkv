@@ -1,4 +1,5 @@
 use std::cmp::Ordering;
+use std::collections::BTreeMap;
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone)]
 pub struct FreeSpace {
@@ -47,6 +48,22 @@ impl FreeList {
         }
     }
 
+    pub fn new_from_index<K>(index: BTreeMap<K, FreeSpace>) -> Self {
+        let mut list: Vec<FreeSpace> = vec![];
+        let mut total_free_space = 0;
+        for k in index.iter() {
+            list.push(k.1.clone());
+            total_free_space += k.1.space;
+        }
+
+        list.sort();
+
+        return Self{
+            list,
+            total_free_space,
+        }
+    }
+
     pub fn insert_free_space(&mut self, cursor: usize, space: usize) {
         let value = FreeSpace { cursor, space };
         let pos = match self.list.binary_search(&value) {
@@ -82,7 +99,6 @@ impl FreeList {
             if already_merged.contains(&x) {
                 continue
             }
-
 
             let mut tmp_fs = fs1.clone();
             // check for neighbours and merge those that fit
@@ -135,6 +151,11 @@ impl FreeList {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn test_new_from_index() {
+        assert_eq!(1, 2)
+    }
 
     #[test]
     fn test_insert_free_space() {
