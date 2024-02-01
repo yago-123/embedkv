@@ -2,12 +2,12 @@ use std::fs::{File, OpenOptions};
 use uuid::Uuid;
 
 pub struct FileHeader {
-    file: File,
+    pub(crate) file: File,
     page_count: u32,
 }
 
 impl FileHeader {
-    pub fn new(datastore: Option<String>) -> Result<FileHeader, String> {
+    pub fn new(datastore: Option<String>) -> Result<Self, std::io::Error> {
         let mut name = Uuid::new_v4().to_string();
         if let Some(ds_name) = datastore {
             name = ds_name
@@ -21,11 +21,11 @@ impl FileHeader {
             .open(name);
 
         match file_handler {
-            Ok(file) => Ok(FileHeader{
+            Ok(file) => Ok(Self {
                 page_count: 0,
                 file: file,
             }),
-            Err(error) => Err(format!("error creating file header, {}", error)),
+            Err(error) => Err(error),
         }
     }
 }

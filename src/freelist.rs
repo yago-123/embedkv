@@ -40,8 +40,8 @@ pub struct FreeList {
 }
 
 impl FreeList {
-    pub fn new() -> FreeList {
-        FreeList {
+    pub fn new() -> Self {
+        Self {
             list: Vec::new(),
             total_free_space: 0,
         }
