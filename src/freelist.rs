@@ -1,42 +1,8 @@
-use std::cmp::Ordering;
 use std::collections::BTreeMap;
-
-#[derive(Debug, Eq, PartialEq, PartialOrd, Clone)]
-pub struct FreeSpace {
-    pub space: usize,
-    pub cursor: usize,
-}
-
-impl Ord for FreeSpace {
-    fn cmp(&self, other: &Self) -> Ordering {
-        let order = self.space.cmp(&other.space);
-        if order == Ordering::Equal {
-            // todo(): refine the ordering
-        }
-
-        return order
-    }
-}
-
-impl FreeSpace {
-    fn is_neighbour_of(&self, spot: &FreeSpace) -> bool {
-        let func_is_neighbour = | nb1: &FreeSpace, nb2: &FreeSpace | -> bool {
-            nb1.cursor > 0 && (nb1.cursor == nb2.cursor + nb2.space)
-        };
-
-        return func_is_neighbour(self, spot) || func_is_neighbour(spot, self);
-    }
-
-    fn merge_with(&self, spot: &FreeSpace) -> FreeSpace {
-        FreeSpace {
-            cursor: self.cursor.min(spot.cursor),
-            space: self.space + spot.space,
-        }
-    }
-}
+use crate::slot::Slot;
 
 pub struct FreeList {
-    list: Vec<FreeSpace>,
+    list: Vec<Slot>,
     total_free_space: usize,
 }
 
@@ -48,8 +14,8 @@ impl FreeList {
         }
     }
 
-    pub fn new_from_index<K>(index: BTreeMap<K, FreeSpace>) -> Self {
-        let mut list: Vec<FreeSpace> = vec![];
+    pub fn new_from_index<K>(index: BTreeMap<K, Slot>) -> Self {
+        let mut list: Vec<Slot> = vec![];
         let mut total_free_space = 0;
         for k in index.iter() {
             list.push(k.1.clone());
@@ -65,7 +31,7 @@ impl FreeList {
     }
 
     pub fn insert_free_space(&mut self, cursor: usize, space: usize) {
-        let value = FreeSpace { cursor, space };
+        let value = Slot { cursor, space };
         let pos = match self.list.binary_search(&value) {
             Ok(pos) | Err(pos) => pos,
         };
@@ -75,7 +41,7 @@ impl FreeList {
     }
 
     pub fn retrieve_free_space(&mut self, space: usize) -> Option<usize> {
-        let space_cursor = FreeSpace{space: space, cursor: 0};
+        let space_cursor = Slot {space: space, cursor: 0};
 
         if let Some(val) = self.retrieve_equal_or_bigger_than(&space_cursor) {
             self.total_free_space -= val.space;
@@ -86,7 +52,7 @@ impl FreeList {
     }
 
     pub fn compact(&mut self) {
-        let mut new_list: Vec<FreeSpace> = vec![];
+        let mut new_list: Vec<Slot> = vec![];
         let mut already_merged: Vec<usize> = vec![];
 
         // re-sort by cursor so we can execute compact() only once
@@ -118,7 +84,7 @@ impl FreeList {
         self.list = new_list;
     }
 
-    fn retrieve_equal_or_bigger_than(&mut self, expected_amount: &FreeSpace) -> Option<FreeSpace> {
+    fn retrieve_equal_or_bigger_than(&mut self, expected_amount: &Slot) -> Option<Slot> {
         let mut claimed;
 
         // search for the first item in the list that have equal or bigger space available
@@ -133,7 +99,7 @@ impl FreeList {
         // store again the free space if the space claimed has been bigger than the space
         // that is going to be filled
         if claimed.space > expected_amount.space {
-            let free_space = FreeSpace {
+            let free_space = Slot {
                 space: claimed.space - expected_amount.space,
                 cursor: claimed.cursor + expected_amount.space,
             };
@@ -162,13 +128,13 @@ mod tests {
         // insert one element
         let mut free_list = FreeList::new();
         free_list.insert_free_space(0, 10);
-        assert_eq!(free_list.list, vec![FreeSpace {space: 10, cursor: 0}]);
+        assert_eq!(free_list.list, vec![Slot {space: 10, cursor: 0}]);
 
         // insert free space at the beginning
         free_list.insert_free_space(10, 5);
         assert_eq!(
             free_list.list,
-            vec![FreeSpace {space: 5, cursor: 10}, FreeSpace {space: 10, cursor: 0}]
+            vec![Slot {space: 5, cursor: 10}, Slot {space: 10, cursor: 0}]
         );
 
         // insert free space at the end
@@ -176,9 +142,9 @@ mod tests {
         assert_eq!(
             free_list.list,
             vec![
-                FreeSpace {space: 5, cursor: 10},
-                FreeSpace {space: 10, cursor: 0},
-                FreeSpace {space: 80, cursor: 20},
+                Slot {space: 5, cursor: 10},
+                Slot {space: 10, cursor: 0},
+                Slot {space: 80, cursor: 20},
             ]
         );
 
@@ -187,10 +153,10 @@ mod tests {
         assert_eq!(
             free_list.list,
             vec![
-                FreeSpace {space: 5, cursor: 10},
-                FreeSpace {space: 8, cursor: 30},
-                FreeSpace {space: 10, cursor: 0},
-                FreeSpace {space: 80, cursor: 20},
+                Slot {space: 5, cursor: 10},
+                Slot {space: 8, cursor: 30},
+                Slot {space: 10, cursor: 0},
+                Slot {space: 80, cursor: 20},
             ]
         );
 
@@ -199,11 +165,11 @@ mod tests {
         assert_eq!(
             free_list.list,
             vec![
-                FreeSpace {space: 5, cursor: 10},
-                FreeSpace {space: 8, cursor: 30},
-                FreeSpace {space: 10, cursor: 0},
-                FreeSpace {space: 11, cursor: 0},
-                FreeSpace {space: 80, cursor: 20},
+                Slot {space: 5, cursor: 10},
+                Slot {space: 8, cursor: 30},
+                Slot {space: 10, cursor: 0},
+                Slot {space: 11, cursor: 0},
+                Slot {space: 80, cursor: 20},
             ]
         );
 
@@ -212,12 +178,12 @@ mod tests {
         assert_eq!(
             free_list.list,
             vec![
-                FreeSpace {space: 5, cursor: 10},
-                FreeSpace {space: 5, cursor: 10},
-                FreeSpace {space: 8, cursor: 30},
-                FreeSpace {space: 10, cursor: 0},
-                FreeSpace {space: 11, cursor: 0},
-                FreeSpace {space: 80, cursor: 20},
+                Slot {space: 5, cursor: 10},
+                Slot {space: 5, cursor: 10},
+                Slot {space: 8, cursor: 30},
+                Slot {space: 10, cursor: 0},
+                Slot {space: 11, cursor: 0},
+                Slot {space: 80, cursor: 20},
             ]
         );
 
@@ -237,16 +203,16 @@ mod tests {
         // retrieve space that matches the exact same space
         free_list.insert_free_space(20, 12);
         assert_eq!(free_list.retrieve_free_space(12), Some(20));
-        assert_eq!(free_list.list, vec![FreeSpace {space: 5, cursor: 15}]);
+        assert_eq!(free_list.list, vec![Slot {space: 5, cursor: 15}]);
 
         // pick the smaller space available
         free_list.insert_free_space(10, 300);
         assert_eq!(free_list.retrieve_free_space(5), Some(15));
-        assert_eq!(free_list.list, vec![FreeSpace {space: 300, cursor: 10}]);
+        assert_eq!(free_list.list, vec![Slot {space: 300, cursor: 10}]);
 
         // subtract the remaining space when space asked < space available
         assert_eq!(free_list.retrieve_free_space(1), Some(10));
-        assert_eq!(free_list.list, vec![FreeSpace {space: 299, cursor: 11}]);
+        assert_eq!(free_list.list, vec![Slot {space: 299, cursor: 11}]);
     }
 
     #[test]
@@ -259,17 +225,17 @@ mod tests {
         // insert 1 free space and try to compact
         free_list.insert_free_space(0, 10);
         free_list.compact();
-        assert_eq!(free_list.list, vec![FreeSpace {space: 10, cursor: 0}]);
+        assert_eq!(free_list.list, vec![Slot {space: 10, cursor: 0}]);
 
         // insert 1 more free space that is not neighbour and try to compact
         free_list.insert_free_space(30, 11);
         free_list.compact();
-        assert_eq!(free_list.list, vec![FreeSpace {space: 10, cursor: 0}, FreeSpace {space: 11, cursor: 30}]);
+        assert_eq!(free_list.list, vec![Slot {space: 10, cursor: 0}, Slot {space: 11, cursor: 30}]);
 
         // insert one new element that is neighbour of the first free space
         free_list.insert_free_space(10, 5);
         free_list.compact();
-        assert_eq!(free_list.list, vec![FreeSpace {space: 11, cursor: 30}, FreeSpace {space: 15, cursor: 0}]);
+        assert_eq!(free_list.list, vec![Slot {space: 11, cursor: 30}, Slot {space: 15, cursor: 0}]);
 
         // try merge of 5 elements at the same time
         free_list.insert_free_space(15, 10);
@@ -277,12 +243,12 @@ mod tests {
         free_list.insert_free_space(29, 1);
         free_list.insert_free_space(41, 2);
         free_list.compact();
-        assert_eq!(free_list.list, vec![FreeSpace {space: 43, cursor: 0}]);
+        assert_eq!(free_list.list, vec![Slot {space: 43, cursor: 0}]);
 
         // not merge by one single space
         free_list.insert_free_space(44, 1);
         free_list.compact();
-        assert_eq!(free_list.list, vec![FreeSpace {space: 1, cursor: 44}, FreeSpace {space: 43, cursor: 0}]);
+        assert_eq!(free_list.list, vec![Slot {space: 1, cursor: 44}, Slot {space: 43, cursor: 0}]);
     }
 
     #[test]
@@ -293,23 +259,23 @@ mod tests {
 
         // retrieve free space that is equal to the requested size
         assert_eq!(
-            free_list.retrieve_equal_or_bigger_than(&FreeSpace {space: 10, cursor: 0}),
-            Some(FreeSpace {space: 10, cursor: 0})
+            free_list.retrieve_equal_or_bigger_than(&Slot {space: 10, cursor: 0}),
+            Some(Slot {space: 10, cursor: 0})
         );
-        assert_eq!(free_list.list, vec![FreeSpace {space: 5, cursor: 15}]);
+        assert_eq!(free_list.list, vec![Slot {space: 5, cursor: 15}]);
 
         // retrieve free space that is bigger than the requested size
         assert_eq!(
-            free_list.retrieve_equal_or_bigger_than(&FreeSpace {space: 12, cursor: 0}), None
+            free_list.retrieve_equal_or_bigger_than(&Slot {space: 12, cursor: 0}), None
         );
-        assert_eq!(free_list.list, vec![FreeSpace {space: 5, cursor: 15}]);
+        assert_eq!(free_list.list, vec![Slot {space: 5, cursor: 15}]);
 
         // retrieve  space that is smaller than available and make sure that the space
         // remaining is reinserted and updated
         assert_eq!(
-            free_list.retrieve_equal_or_bigger_than(&FreeSpace {space: 1, cursor: 0}),
-            Some(FreeSpace {space: 1, cursor: 15})
+            free_list.retrieve_equal_or_bigger_than(&Slot {space: 1, cursor: 0}),
+            Some(Slot {space: 1, cursor: 15})
         );
-        assert_eq!(free_list.list, vec![FreeSpace {space: 4, cursor: 16}])
+        assert_eq!(free_list.list, vec![Slot {space: 4, cursor: 16}])
     }
 }

@@ -2,13 +2,14 @@ use std::collections::BTreeMap;
 use std::io::{Error, ErrorKind, Seek, SeekFrom, Write};
 use std::os::unix::fs::FileExt;
 use crate::fileheader::FileHeader;
-use crate::freelist::{FreeList, FreeSpace};
+use crate::freelist::FreeList;
+use crate::slot::Slot;
 use serde::{Serialize, Deserialize};
 
 pub struct Persister<K> {
     freelist: FreeList,  
     header: FileHeader,
-    index: BTreeMap<K, FreeSpace>, // todo(): unify FreeSpace with a more common name
+    index: BTreeMap<K, Slot>, // todo(): unify SlotInstance with a more common name
     last_cursor: usize,
 }
 
@@ -44,7 +45,7 @@ impl<K> Persister<K> where K: Ord {
         // todo(): serialize and store the key
 
         // insert key in index
-        if self.index.insert(key, FreeSpace{cursor, space: value.len()}).is_none() {
+        if self.index.insert(key, Slot {cursor, space: value.len()}).is_none() {
             // todo(): return error and undo things
         }
 

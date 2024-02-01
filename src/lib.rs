@@ -1,6 +1,7 @@
 mod freelist;
 mod fileheader;
 mod persist;
+mod slot;
 
 pub fn add(left: usize, right: usize) -> usize {
     left + right
