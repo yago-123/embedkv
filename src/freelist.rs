@@ -2,8 +2,8 @@ use std::cmp::Ordering;
 
 #[derive(Debug, Eq, PartialEq, PartialOrd, Clone)]
 pub struct FreeSpace {
-    space: usize,
-    cursor: usize,
+    pub space: usize,
+    pub cursor: usize,
 }
 
 impl Ord for FreeSpace {

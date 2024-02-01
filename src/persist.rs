@@ -1,25 +1,28 @@
-
-use std::io::{Seek, SeekFrom, Write};
+use std::collections::BTreeMap;
+use std::io::{Error, ErrorKind, Seek, SeekFrom, Write};
 use std::os::unix::fs::FileExt;
 use crate::fileheader::FileHeader;
-use crate::freelist::FreeList;
+use crate::freelist::{FreeList, FreeSpace};
 use serde::{Serialize, Deserialize};
 
-pub struct Persister {
+pub struct Persister<K> {
     freelist: FreeList,  
     header: FileHeader,
+    index: BTreeMap<K, FreeSpace>, // todo(): unify FreeSpace with a more common name
     last_cursor: usize,
 }
 
-impl Persister {
+impl<K> Persister<K> where K: Ord {
     pub fn new(datastore: String, storage_limit: usize) -> Result<Self, std::io::Error> {
         FileHeader::new(Some(datastore))
-            .map(|fh| Self { freelist: FreeList::new(), header: fh, last_cursor: 0 })
+            .map(|fh| Self { freelist: FreeList::new(), header: fh, index: BTreeMap::new(), last_cursor: 0 })
     }
 
-    pub fn insert_kv<'a, K>(&mut self, key: K, value: &Vec<u8>) -> Result<usize, std::io::Error>
+    pub fn insert_kv<'a>(&mut self, key: K, value: &Vec<u8>) -> Result<usize, std::io::Error>
     where K: Serialize + Deserialize<'a> {
         let mut cursor: usize;
+
+        // todo(): handle the case when the key has already been inserted
 
         // try to retrieve free space, otherwise, add in the last cursor
         match self.freelist.retrieve_free_space(value.len()) {
@@ -30,7 +33,7 @@ impl Persister {
             }
         }
 
-        if let Err(error) = self.insert_value_in_position(&value, cursor) {
+        if let Err(error) = self.insert_value(&value, cursor) {
             // make sure to free the memory to prevent leaks
             if cursor == self.last_cursor - value.len() {
                 self.last_cursor = cursor - value.len()
@@ -40,11 +43,32 @@ impl Persister {
 
         // todo(): serialize and store the key
 
+        // insert key in index
+        if self.index.insert(key, FreeSpace{cursor, space: value.len()}).is_none() {
+            // todo(): return error and undo things
+        }
+
         return Ok(cursor);
     }
 
-    pub fn retrieve_kv<K>(&mut self, key: K) -> Result<Vec<u8>, std::io::Error> {
-        return Ok(vec![]);
+    pub fn retrieve_v(&mut self, key: &K) -> Result<Vec<u8>, std::io::Error> {
+        if !self.index.contains_key(key) {
+            return Err(Error::new(ErrorKind::Other, "The key introduced was not registered"));
+        }
+
+        // retrieve value from mem
+        match self.index.get(key) {
+            Some(val) => {
+                return self.retrieve_value(val.cursor, val.space);
+            },
+            None => {
+                return Err(Error::new(ErrorKind::Other, "Unexpected error retrieving key from index"));
+            }
+        }
+    }
+
+    pub fn update_kv(&mut self, key: K) {
+
     }
 
     fn insert_value(&mut self, data: &Vec<u8>, cursor: usize) -> Result<(), std::io::Error> {
