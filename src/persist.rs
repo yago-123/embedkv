@@ -42,7 +42,7 @@ impl<K> Persister<K> where K: Ord {
             return Err(error)
         }
 
-        // todo(): serialize and store the key
+        // todo(): serialize and store the key in file
 
         // insert key in index
         if self.index.insert(key, Slot {cursor, space: value.len()}).is_none() {
@@ -73,8 +73,8 @@ impl<K> Persister<K> where K: Ord {
     }
 
     fn insert_value(&mut self, data: &Vec<u8>, cursor: usize) -> Result<(), std::io::Error> {
-        self.header.file.seek(SeekFrom::Start(cursor as u64))?;
-        self.header.file.write_all(data.as_ref())?;
+        self.header.db_file.seek(SeekFrom::Start(cursor as u64))?;
+        self.header.db_file.write_all(data.as_ref())?;
 
         Ok(())
     }
@@ -84,8 +84,8 @@ impl<K> Persister<K> where K: Ord {
         let mut buffer = Vec::with_capacity(space);
 
         // todo: handle the error and returns
-        self.header.file.seek(SeekFrom::Start(cursor as u64));
-        self.header.file.read_at(&mut buffer.as_mut_slice(), cursor as u64)?;
+        self.header.db_file.seek(SeekFrom::Start(cursor as u64));
+        self.header.db_file.read_at(&mut buffer.as_mut_slice(), cursor as u64)?;
 
         return Ok(buffer)
     }
