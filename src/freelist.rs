@@ -1,4 +1,5 @@
 use std::collections::BTreeMap;
+use crate::persist::Persister;
 use crate::slot::Slot;
 
 pub struct FreeList {
@@ -14,18 +15,41 @@ impl FreeList {
         }
     }
 
-    pub fn new_from_index<K>(index: BTreeMap<K, Slot>) -> Self {
-        let mut list: Vec<Slot> = vec![];
+    pub fn new_from_index<K>(index: &BTreeMap<K, Slot>) -> Self {
+        let mut used_slot_list: Vec<&Slot> = vec![];
         let mut total_free_space = 0;
-        for k in index.iter() {
-            list.push(k.1.clone());
-            total_free_space += k.1.space;
+
+        // todo(): for now just work with the references, check if using clone is more performant (small struct)
+        // retrieve the value references
+        used_slot_list = index.values().collect();
+
+        // sort the elements by cursor
+        used_slot_list.sort_by(|a, b| a.cursor.cmp(&b.cursor));
+
+        // get the free slots by analyzing the occupied slots
+        let mut new_list: Vec<Slot> = vec![];
+        let mut previous_slot: &Slot = &Slot{space: 0, cursor: 0};
+        for (i, current_slot) in used_slot_list.iter().enumerate() {
+            if i == 0 && current_slot.cursor > 0 {
+                new_list.push(Slot{space: current_slot.cursor-1, cursor: 0});
+                total_free_space += current_slot.cursor-1;
+            }
+
+            if i > 0 && current_slot.cursor != (previous_slot.space+previous_slot.cursor+1) {
+                new_list.push(Slot{
+                    space: current_slot.cursor-previous_slot.cursor,
+                    cursor: previous_slot.cursor+previous_slot.space+1
+                });
+                total_free_space += current_slot.cursor-previous_slot.cursor;
+            }
+
+            // save the slot for the next iteration
+            previous_slot = current_slot;
         }
 
-        list.sort();
-
+        // return updated free list
         return Self{
-            list,
+            list: new_list,
             total_free_space,
         }
     }
