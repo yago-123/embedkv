@@ -52,7 +52,7 @@ impl<K> Persister<K> where K: Ord {
         return Ok(cursor);
     }
 
-    pub fn retrieve_v(&mut self, key: &K) -> Result<Vec<u8>, std::io::Error> {
+    pub fn get_value(&mut self, key: &K) -> Result<Vec<u8>, std::io::Error> {
         if !self.index.contains_key(key) {
             return Err(Error::new(ErrorKind::Other, "The key introduced was not registered"));
         }
@@ -69,6 +69,10 @@ impl<K> Persister<K> where K: Ord {
     }
 
     pub fn update_kv(&mut self, key: K) {
+
+    }
+
+    pub fn delete_kv(&mut self, key: K) {
 
     }
 

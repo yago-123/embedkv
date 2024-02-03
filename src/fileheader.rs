@@ -1,4 +1,5 @@
 use std::fs::{File, OpenOptions};
+use std::io::{Error, ErrorKind};
 use uuid::Uuid;
 
 pub struct FileHeader {
@@ -19,14 +20,14 @@ impl FileHeader {
             .read(true)
             .create(true)
             .truncate(true) // todo(): remove this one
-            .open(name);
+            .open(&name);
 
         let mut index_file_handler = OpenOptions::new()
             .write(true)
             .read(true)
             .create(true)
             .truncate(true) // todo(): remove this one
-            .open(format!("{}_{}", "index".to_string(), name));
+            .open(format!("{}_{}", "index".to_string(), &name));
 
         match (db_file_handler, index_file_handler) {
             (Ok(db_file), Ok(index_file)) => Ok(Self {
@@ -34,7 +35,7 @@ impl FileHeader {
                 db_file,
                 index_file,
             }),
-            (Err(db_error), _) | (_, Err(index_error)) => Err(db_error.unwrap_or(index_error)),
+            ((_), (_)) => Err(Error::new(ErrorKind::Other, "The key introduced was not registered")),
         }
     }
 }
