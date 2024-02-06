@@ -77,9 +77,9 @@ impl<K> Persister<K> where K: Ord {
         }
     }
 
-    pub fn update_kv(&mut self, key: &K, value: &Vec<u8>) -> Result<(), KVError> {
+    pub fn update_kv(&mut self, key: K, value: &Vec<u8>) -> Result<(), KVError> {
         let mut slot = Slot{space: 0, cursor: 0};
-        match self.index.get(key) {
+        match self.index.get(&key) {
             Some(val) => {
                 slot = val.clone();
             },
