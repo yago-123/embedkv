@@ -15,13 +15,8 @@ impl FreeList {
         }
     }
 
-    pub fn new_from_index<K>(index: &BTreeMap<K, Slot>) -> Self {
-        let mut used_slot_list: Vec<&Slot> = vec![];
+    pub fn new_from_index<K>(mut used_slot_list: Vec<&Slot>) -> Self {
         let mut total_free_space = 0;
-
-        // todo(): for now just work with the references, check if using clone is more performant (small struct)
-        // retrieve the value references
-        used_slot_list = index.values().collect();
 
         // sort the elements by cursor
         used_slot_list.sort_by(|a, b| a.cursor.cmp(&b.cursor));
@@ -144,6 +139,8 @@ mod tests {
 
     #[test]
     fn test_new_from_index() {
+        // Btree...
+        // index.values().collect()
         assert_eq!(1, 2)
     }
 
