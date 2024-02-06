@@ -28,7 +28,7 @@ impl<K> Persister<K> where K: Ord {
             .map_err(|io_error| KVError::IOError(io_error))
     }
 
-    pub fn insert_kv<'a>(&mut self, key: K, value: &Vec<u8>) -> Result<usize, std::io::Error>
+    pub fn insert_kv<'a>(&mut self, key: K, value: &Vec<u8>) -> Result<usize, KVError>
     where K: Serialize + Deserialize<'a> {
         let mut cursor: usize;
 
@@ -61,18 +61,13 @@ impl<K> Persister<K> where K: Ord {
         return Ok(cursor);
     }
 
-    pub fn get_value(&mut self, key: &K) -> Result<Vec<u8>, std::io::Error> {
-        if !self.index.contains_key(key) {
-            return Err(Error::new(ErrorKind::Other, "The key introduced was not registered"));
-        }
-
-        // retrieve value from mem
+    pub fn get_value(&mut self, key: &K) -> Result<Vec<u8>, KVError> {
         match self.index.get(key) {
             Some(val) => {
                 return self.retrieve_value(val.cursor, val.space);
             },
             None => {
-                return Err(Error::new(ErrorKind::Other, "Unexpected error retrieving key from index"));
+                return Err(KeyDoesNotExist);
             }
         }
     }
@@ -135,9 +130,11 @@ impl<K> Persister<K> where K: Ord {
         }
     }
 
-    fn persist_value(&mut self, data: &Vec<u8>, cursor: usize) -> Result<(), std::io::Error> {
-        self.header.db_file.seek(SeekFrom::Start(cursor as u64))?;
-        self.header.db_file.write_all(data.as_ref())?;
+    fn persist_value(&mut self, data: &Vec<u8>, cursor: usize) -> Result<(), KVError> {
+        self.header.db_file.seek(SeekFrom::Start(cursor as u64))
+            .map_err(|io_error| KVError::IOError(io_error))?;
+        self.header.db_file.write_all(data.as_ref())
+            .map_err(|io_error| KVError::IOError(io_error))?;
 
         Ok(())
     }
@@ -146,13 +143,14 @@ impl<K> Persister<K> where K: Ord {
         return Ok(());
     }
 
-    fn retrieve_value(&mut self, cursor: usize, space: usize) -> Result<Vec<u8>, std::io::Error> {
+    fn retrieve_value(&mut self, cursor: usize, space: usize) -> Result<Vec<u8>, KVError> {
         // todo(buffer): use a fixed buffer instead of a vec
         let mut buffer = Vec::with_capacity(space);
 
         // todo: handle the error and returns
         self.header.db_file.seek(SeekFrom::Start(cursor as u64));
-        self.header.db_file.read_at(&mut buffer.as_mut_slice(), cursor as u64)?;
+        self.header.db_file.read_at(&mut buffer.as_mut_slice(), cursor as u64)
+            .map_err(|io_error| KVError::IOError(io_error))?;
 
         return Ok(buffer)
     }
