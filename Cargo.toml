@@ -8,3 +8,4 @@ edition = "2021"
 [dependencies]
 uuid = { version = "1.7.0", features = ["v4"] }
 serde = { version = "1.0.196", features = ["derive"] }
+tempfile = "3.10.0"

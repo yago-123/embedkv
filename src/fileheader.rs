@@ -5,7 +5,6 @@ use uuid::Uuid;
 pub struct FileHeader {
     pub(crate) db_file: File,
     pub(crate) index_file: File,
-    page_count: u32,
 }
 
 impl FileHeader {
@@ -31,7 +30,6 @@ impl FileHeader {
 
         match (db_file_handler, index_file_handler) {
             (Ok(db_file), Ok(index_file)) => Ok(Self {
-                page_count: 0,
                 db_file,
                 index_file,
             }),
