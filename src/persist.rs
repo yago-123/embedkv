@@ -22,14 +22,14 @@ pub struct Persister<K> {
     last_cursor: usize,
 }
 
-impl<K> Persister<K> where K: Ord {
+impl<K> Persister<K> where K: Ord + Clone {
     pub fn new(datastore: String, storage_limit: usize) -> Result<Self, KVError> {
         FileHeader::new(Some(datastore))
             .map(|fh| Self { freelist: FreeList::new(), header: fh, index: BTreeMap::new(), last_cursor: 0 })
             .map_err(|io_error| KVError::IOError(io_error.to_string()))
     }
 
-    pub fn insert_kv<'a>(&mut self, key: K, value: &Vec<u8>) -> Result<(), KVError>
+    pub fn insert_kv<'a>(&mut self, key: &K, value: &Vec<u8>) -> Result<(), KVError>
     where K: Serialize + Deserialize<'a> {
         let mut cursor: usize = 0;
 
@@ -60,7 +60,7 @@ impl<K> Persister<K> where K: Ord {
         self.persist_key();
 
         // insert key in index
-        if self.index.insert(key, Slot {cursor, space: value.len()}).is_none() {
+        if self.index.insert(key.clone(), Slot {cursor, space: value.len()}).is_none() {
             // todo(): return error and undo things (insert the slot as free space)
         }
 
@@ -171,9 +171,135 @@ impl<K> Persister<K> where K: Ord {
 
 #[cfg(test)]
 mod tests {
-    use std::env;
     use std::fs::OpenOptions;
     use super::*;
+
+    fn new_mock_persister() -> Persister<String> {
+        Persister {
+            freelist: FreeList::new(),
+            header: FileHeader {
+                db_file: tempfile::tempfile().unwrap(),
+                index_file: tempfile::tempfile().unwrap(),
+            },
+            index: BTreeMap::new(),
+            last_cursor: 0,
+        }
+    }
+
+    #[test]
+    fn test_insert_kv_empty_values() {
+        let mut persister = new_mock_persister();
+
+        assert_eq!(Ok(()), persister.insert_kv(&"empty_value".to_string(), &vec![]));
+        assert_eq!(
+            Slot{cursor: 0, space: 0},
+            persister.index.get(&"empty_value".to_string()).unwrap().clone()
+        );
+        assert_eq!(0, persister.last_cursor);
+    }
+
+    #[test]
+    fn test_insert_kv_two_times_same_key() {
+        let mut persister = new_mock_persister();
+
+        assert_eq!(Ok(()), persister.insert_kv(&"key_duplicated".to_string(), &vec![]));
+        assert_eq!(KeyAlreadyExist, persister.insert_kv(&"key_duplicated".to_string(), &vec![]).unwrap_err());
+        assert_eq!(0, persister.last_cursor);
+    }
+
+    #[test]
+    fn test_insert_kv_multiple_kvs() {
+        let mut persister = new_mock_persister();
+        let keys: Vec<String> = vec![
+            "key_1".to_string(),
+            "key_2".to_string(),
+            "key_3".to_string(),
+            "key_4".to_string(),
+            "key_5".to_string(),
+        ];
+
+        let values: Vec<Vec<u8>> = vec![
+            vec![b'a', b'b', b'c'],
+            vec![b'd', b'e', b'f', b'g'],
+            vec![b'h', b'i', b'j', b'k', b'l'],
+            vec![b'm', b'n', b'o', b'p'],
+            vec![b'q', b'r', b's', b't', b'u', b'v'],
+        ];
+
+        let slots: Vec<Slot> = vec![
+            Slot { space: 3, cursor: 0 },
+            Slot { space: 4, cursor: 3 },
+            Slot { space: 5, cursor: 7 },
+            Slot { space: 4, cursor: 12 },
+            Slot { space: 6, cursor: 16 },
+        ];
+
+        // insert multiple non empty values and make sure that cursor is incremented
+        let mut expected_cursor = 0;
+        for kv in keys.iter().zip(values.iter()) {
+            persister.insert_kv(kv.0, kv.1).unwrap();
+            assert_eq!(expected_cursor, persister.last_cursor);
+
+            expected_cursor += kv.1.len();
+        }
+
+        // make sure that all keys can be retrieved with the corresponding slot
+        let mut iteration = 0;
+        for kv in keys.iter().zip(values.iter()) {
+            assert_eq!(
+                slots[iteration],
+                persister.index.get(kv.0).unwrap().clone()
+            );
+
+            iteration += 1;
+        }
+
+        // check that the resulting file is the same
+        persister.header.db_file.flush().unwrap();
+        assert_eq!(1, 2);
+        // assert_slots_eq(
+        //      open_file("tests/data/insert_kv-01.dat"),
+        //      persister.header.db_file,
+        //      &vec![Slot{cursor: 0, space: 0}]
+        // )
+    }
+
+    #[test]
+    fn test_insert_kv_check_free_spots() {
+        let mut persister = new_mock_persister();
+
+        // create a free spot in the middle of two keys with size 2 and test whether we
+        // make use of the free space generated
+        persister.insert_kv(&"key_1".to_string(), &vec![b'a', b'b', b'c']);
+        persister.insert_kv(&"key_2".to_string(), &vec![b'd', b'e']);
+        persister.insert_kv(&"key_3".to_string(), &vec![b'f', b'g', b'h']);
+
+        // delete the middle kv
+        persister.delete_kv(&"key_2".to_string()).unwrap();
+
+        persister.insert_kv(&"key_4".to_string(), &vec![b'i', b'j', b'k']);
+        assert_eq!(8, persister.index.get(&"key_4".to_string()).unwrap().cursor);
+        assert_eq!(3, persister.index.get(&"key_4".to_string()).unwrap().space);
+
+        persister.insert_kv(&"key_5".to_string(), &vec![b'l']);
+        assert_eq!(3, persister.index.get(&"key_5".to_string()).unwrap().cursor);
+        assert_eq!(1, persister.index.get(&"key_5".to_string()).unwrap().space);
+    }
+
+    #[test]
+    fn test_get_value() {
+        assert_eq!(1, 2)
+    }
+
+    #[test]
+    fn test_update_value() {
+        assert_eq!(1, 2)
+    }
+
+    #[test]
+    fn delete_kv() {
+        assert_eq!(1, 2)
+    }
 
     fn assert_slots_eq(mut file_exp: File, mut file_obt: File, slots: &Vec<Slot>) {
         let highest_cursor = slots.iter().map(|slot| slot.cursor + slot.space).max().unwrap_or(0);
@@ -202,60 +328,5 @@ mod tests {
         OpenOptions::new()
             .read(true)
             .open(name).unwrap()
-    }
-
-    fn new_mock_persister() -> Persister<String> {
-        Persister {
-            freelist: FreeList::new(),
-            header: FileHeader {
-                db_file: tempfile::tempfile().unwrap(),
-                index_file: tempfile::tempfile().unwrap(),
-            },
-            index: BTreeMap::new(),
-            last_cursor: 0,
-        }
-    }
-
-    #[test]
-    fn test_insert_kv() {
-        let mut persister = new_mock_persister();
-
-        // try to insert empty value
-        assert_eq!(Ok(()), persister.insert_kv("key_1".to_string(), &vec![]));
-        assert_eq!(
-            Slot{cursor: 0, space: 0},
-            persister.index.get(&"key_1".to_string()).unwrap().clone()
-        );
-        assert_eq!(0, persister.last_cursor);
-
-        // try to insert two times same key
-        assert_eq!(KeyAlreadyExist, persister.insert_kv("key_1".to_string(), &vec![]).unwrap_err());
-
-        // insert non-empty values
-        assert_eq!(Ok(()), persister.insert_kv("key_2".to_string(), &vec![b'a', b'b', b'c']));
-        assert_eq!(
-            Slot{cursor: 0, space: 3},
-            persister.index.get(&"key_2".to_string()).unwrap().clone()
-        );
-
-        // open_file("tests/data/insert_kv-01.dat");
-
-       // persister.insert_kv("key_2".to_string(), &vec![b'a', b'b', b'c']);
-        //assert_slots_eq(persister.header.db_file, )
-    }
-
-    #[test]
-    fn test_get_value() {
-        assert_eq!(1, 2)
-    }
-
-    #[test]
-    fn test_update_value() {
-        assert_eq!(1, 2)
-    }
-
-    #[test]
-    fn delete_kv() {
-        assert_eq!(1, 2)
     }
 }

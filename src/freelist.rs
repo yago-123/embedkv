@@ -1,5 +1,3 @@
-use std::collections::BTreeMap;
-use crate::persist::Persister;
 use crate::slot::Slot;
 
 pub struct FreeList {
