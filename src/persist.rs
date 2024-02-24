@@ -283,6 +283,19 @@ mod tests {
         persister.insert_kv(&"key_5".to_string(), &vec![b'l']);
         assert_eq!(3, persister.index.get(&"key_5".to_string()).unwrap().cursor);
         assert_eq!(1, persister.index.get(&"key_5".to_string()).unwrap().space);
+
+        // check that the resulting file is the same
+        persister.header.db_file.flush().unwrap();
+        assert_slots_eq(
+            open_file("tests/data/insert_kv-02.dat"),
+            persister.header.db_file,
+            &vec![
+                Slot{space: 3, cursor: 0},
+                Slot{space: 3, cursor: 5},
+                Slot{space: 3, cursor: 8},
+                Slot{space: 1, cursor: 3}
+            ]
+        )
     }
 
     #[test]
