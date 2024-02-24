@@ -237,8 +237,8 @@ mod tests {
         // insert multiple non empty values and make sure that cursor is incremented
         let mut expected_cursor = 0;
         for kv in keys.iter().zip(values.iter()) {
-            persister.insert_kv(kv.0, kv.1).unwrap();
             assert_eq!(expected_cursor, persister.last_cursor);
+            persister.insert_kv(kv.0, kv.1).unwrap();
 
             expected_cursor += kv.1.len();
         }
@@ -256,12 +256,11 @@ mod tests {
 
         // check that the resulting file is the same
         persister.header.db_file.flush().unwrap();
-        assert_eq!(1, 2);
-        // assert_slots_eq(
-        //      open_file("tests/data/insert_kv-01.dat"),
-        //      persister.header.db_file,
-        //      &vec![Slot{cursor: 0, space: 0}]
-        // )
+        assert_slots_eq(
+              open_file("tests/data/insert_kv-01.dat"),
+              persister.header.db_file,
+              &slots
+        )
     }
 
     #[test]
