@@ -14,14 +14,14 @@ impl FileHeader {
             name = ds_name
         }
 
-        let mut db_file_handler = OpenOptions::new()
+        let db_file_handler = OpenOptions::new()
             .write(true)
             .read(true)
             .create(true)
             .truncate(true) // todo(): remove this one
             .open(&name);
 
-        let mut index_file_handler = OpenOptions::new()
+        let index_file_handler = OpenOptions::new()
             .write(true)
             .read(true)
             .create(true)
@@ -33,7 +33,7 @@ impl FileHeader {
                 db_file,
                 index_file,
             }),
-            ((_), (_)) => Err(Error::new(ErrorKind::Other, "The key introduced was not registered")),
+            (_, _) => Err(Error::new(ErrorKind::Other, "The key introduced was not registered")),
         }
     }
 }

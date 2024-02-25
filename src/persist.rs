@@ -9,7 +9,7 @@ use serde::{Serialize, Deserialize};
 use crate::persist::KVError::{KeyAlreadyExist, KeyDoesNotExist};
 
 #[derive(Debug, PartialEq)]
-enum KVError {
+pub enum KVError {
     KeyDoesNotExist,
     KeyAlreadyExist,
     IOError(String),
@@ -23,7 +23,7 @@ pub struct Persister<K> {
 }
 
 impl<K> Persister<K> where K: Ord + Clone {
-    pub fn new(datastore: String, storage_limit: usize) -> Result<Self, KVError> {
+    pub fn new(datastore: String, _storage_limit: usize) -> Result<Self, KVError> {
         FileHeader::new(Some(datastore))
             .map(|fh| Self { freelist: FreeList::new(), header: fh, index: BTreeMap::new(), last_cursor: 0 })
             .map_err(|io_error| KVError::IOError(io_error.to_string()))
@@ -57,7 +57,9 @@ impl<K> Persister<K> where K: Ord + Clone {
         }
 
         // todo(): serialize and store the key in file
-        self.persist_key();
+        if let Err(_) = self.persist_key() {
+
+        }
 
         // insert key in index
         if self.index.insert(key.clone(), Slot {cursor, space: value.len()}).is_none() {
@@ -79,7 +81,7 @@ impl<K> Persister<K> where K: Ord + Clone {
     }
 
     pub fn update_kv(&mut self, key: K, value: &Vec<u8>) -> Result<(), KVError> {
-        let mut slot = Slot{space: 0, cursor: 0};
+        let mut slot;
         match self.index.get(&key) {
             Some(val) => {
                 slot = val.clone();
@@ -110,10 +112,12 @@ impl<K> Persister<K> where K: Ord + Clone {
         slot.space = value.len();
 
         // persist the value
-        self.persist_value(value, slot.cursor);
+        let _ = self.persist_value(value, slot.cursor);
 
         // todo(): serialize the new key data
-        self.persist_key();
+        if let Err(_) = self.persist_key() {
+
+        }
 
         // update the index
         self.index.insert(key, Slot{cursor: slot.cursor, space: slot.space});
@@ -130,7 +134,7 @@ impl<K> Persister<K> where K: Ord + Clone {
 
         // todo(): remove serialized key from file
         // insert key space into file
-        self.delete_key();
+        let _ = self.delete_key();
 
         // remove key from index
         match self.index.remove(key) {
@@ -150,14 +154,14 @@ impl<K> Persister<K> where K: Ord + Clone {
 
     fn retrieve_value(&mut self, cursor: usize, space: usize) -> Result<Vec<u8>, KVError> {
         // todo(buffer): use a fixed buffer instead of a vec
-        let mut buffer = Vec::with_capacity(space);
+        let mut buffer = vec![0; space];
 
         // todo: handle the error and returns
-        self.header.db_file.seek(SeekFrom::Start(cursor as u64));
-        self.header.db_file.read_at(&mut buffer.as_mut_slice(), cursor as u64)
+        let _ = self.header.db_file.seek(SeekFrom::Start(cursor as u64));
+        let _ = self.header.db_file.read_exact_at(&mut buffer.as_mut_slice(), cursor as u64)
             .map_err(|io_error| KVError::IOError(io_error.to_string()))?;
 
-        return Ok(buffer)
+        return Ok(buffer.to_vec())
     }
 
     fn persist_key(&mut self) -> Result<(), KVError> {
@@ -171,7 +175,8 @@ impl<K> Persister<K> where K: Ord + Clone {
 
 #[cfg(test)]
 mod tests {
-    use std::fs::OpenOptions;
+    use std::string::String;
+use std::fs::OpenOptions;
     use super::*;
 
     fn new_mock_persister() -> Persister<String> {
@@ -269,23 +274,23 @@ mod tests {
 
         // create a free spot in the middle of two keys with size 2 and test whether we
         // make use of the free space generated
-        persister.insert_kv(&"key_1".to_string(), &vec![b'a', b'b', b'c']);
-        persister.insert_kv(&"key_2".to_string(), &vec![b'd', b'e']);
-        persister.insert_kv(&"key_3".to_string(), &vec![b'f', b'g', b'h']);
+        let _ = persister.insert_kv(&"key_1".to_string(), &vec![b'a', b'b', b'c']);
+        let _ = persister.insert_kv(&"key_2".to_string(), &vec![b'd', b'e']);
+        let _ = persister.insert_kv(&"key_3".to_string(), &vec![b'f', b'g', b'h']);
 
         // delete the middle kv
-        persister.delete_kv(&"key_2".to_string()).unwrap();
+        let _ = persister.delete_kv(&"key_2".to_string()).unwrap();
 
-        persister.insert_kv(&"key_4".to_string(), &vec![b'i', b'j', b'k']);
+        let _ = persister.insert_kv(&"key_4".to_string(), &vec![b'i', b'j', b'k']);
         assert_eq!(8, persister.index.get(&"key_4".to_string()).unwrap().cursor);
         assert_eq!(3, persister.index.get(&"key_4".to_string()).unwrap().space);
 
-        persister.insert_kv(&"key_5".to_string(), &vec![b'l']);
+        let _ = persister.insert_kv(&"key_5".to_string(), &vec![b'l']);
         assert_eq!(3, persister.index.get(&"key_5".to_string()).unwrap().cursor);
         assert_eq!(1, persister.index.get(&"key_5".to_string()).unwrap().space);
 
         // check that the resulting file is the same
-        persister.header.db_file.flush().unwrap();
+        let _ = persister.header.db_file.flush().unwrap();
         assert_slots_eq(
             open_file("tests/data/insert_kv-02.dat"),
             persister.header.db_file,
@@ -300,7 +305,12 @@ mod tests {
 
     #[test]
     fn test_get_value() {
-        assert_eq!(1, 2)
+        let mut persister = new_mock_persister();
+
+        let _ = persister.insert_kv(&"key1".to_string(), &vec![b'a', b'b', b'c']).unwrap();
+        assert_eq!(vec![b'a', b'b', b'c'], persister.get_value(&"key1".to_string()).unwrap());
+
+        assert_eq!(KVError::KeyDoesNotExist, persister.get_value(&"non_existent_key".to_string()).unwrap_err())
     }
 
     #[test]
