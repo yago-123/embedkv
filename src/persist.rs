@@ -6,7 +6,6 @@ use crate::freelist::FreeList;
 use crate::slot::Slot;
 use std::fs::File;
 use serde::{Serialize, Deserialize};
-use crate::persist::KVError::{KeyAlreadyExist, KeyDoesNotExist};
 
 #[derive(Debug, PartialEq)]
 pub enum KVError {
@@ -34,7 +33,7 @@ impl<K> Persister<K> where K: Ord + Clone {
         let mut cursor: usize = 0;
 
         if self.index.contains_key(&key) {
-            return Err(KeyAlreadyExist)
+            return Err(KVError::KeyAlreadyExist)
         }
 
         if value.len() > 0 {
@@ -75,25 +74,34 @@ impl<K> Persister<K> where K: Ord + Clone {
                 return self.retrieve_value(val.cursor, val.space);
             },
             None => {
-                return Err(KeyDoesNotExist);
+                return Err(KVError::KeyDoesNotExist);
             }
         }
     }
 
-    pub fn update_kv(&mut self, key: K, value: &Vec<u8>) -> Result<(), KVError> {
+    pub fn update_value(&mut self, key: &K, value: &Vec<u8>) -> Result<(), KVError> {
         let mut slot;
-        match self.index.get(&key) {
+
+        match self.index.get(key) {
             Some(val) => {
                 slot = val.clone();
             },
-            None => return Err(KeyDoesNotExist),
+            None => return Err(KVError::KeyDoesNotExist),
         }
 
         // free previous data and claim more space
         if value.len() > slot.space {
             self.freelist.insert_free_space(slot.cursor, slot.space);
-            match self.freelist.retrieve_free_space(slot.space) {
+            if slot.cursor + slot.space == self.last_cursor {
+                self.last_cursor = slot.cursor;
+            }
+
+            match self.freelist.retrieve_free_space(value.len()) {
                 Some(val) => {
+                    if val >= self.last_cursor {
+                        self.last_cursor = val+value.len();
+                    }
+
                     slot.cursor = val;
                 },
                 None => {
@@ -120,7 +128,7 @@ impl<K> Persister<K> where K: Ord + Clone {
         }
 
         // update the index
-        self.index.insert(key, Slot{cursor: slot.cursor, space: slot.space});
+        self.index.insert(key.clone(), Slot{cursor: slot.cursor, space: slot.space});
 
         return Ok(())
     }
@@ -128,8 +136,15 @@ impl<K> Persister<K> where K: Ord + Clone {
     pub fn delete_kv(&mut self, key: &K) -> Result<(), KVError> {
         // check if key exists and insert freed space
         match self.index.get(key) {
-            Some(val) => self.freelist.insert_free_space(val.cursor, val.space),
-            None => return Err(KeyDoesNotExist),
+            Some(val) => {
+                // update the last cursor position
+                if self.last_cursor == val.cursor + val.space {
+                    self.last_cursor = val.cursor;
+                }
+
+                self.freelist.insert_free_space(val.cursor, val.space)
+            },
+            None => return Err(KVError::KeyDoesNotExist),
         }
 
         // todo(): remove serialized key from file
@@ -139,7 +154,7 @@ impl<K> Persister<K> where K: Ord + Clone {
         // remove key from index
         match self.index.remove(key) {
             Some(_) => Ok(()),
-            None => Err(KeyDoesNotExist), // should never happen
+            None => Err(KVError::KeyDoesNotExist), // should never happen
         }
     }
 
@@ -176,7 +191,7 @@ impl<K> Persister<K> where K: Ord + Clone {
 #[cfg(test)]
 mod tests {
     use std::string::String;
-use std::fs::OpenOptions;
+    use std::fs::OpenOptions;
     use super::*;
 
     fn new_mock_persister() -> Persister<String> {
@@ -208,7 +223,7 @@ use std::fs::OpenOptions;
         let mut persister = new_mock_persister();
 
         assert_eq!(Ok(()), persister.insert_kv(&"key_duplicated".to_string(), &vec![]));
-        assert_eq!(KeyAlreadyExist, persister.insert_kv(&"key_duplicated".to_string(), &vec![]).unwrap_err());
+        assert_eq!(KVError::KeyAlreadyExist, persister.insert_kv(&"key_duplicated".to_string(), &vec![]).unwrap_err());
         assert_eq!(0, persister.last_cursor);
     }
 
@@ -315,12 +330,66 @@ use std::fs::OpenOptions;
 
     #[test]
     fn test_update_value() {
-        assert_eq!(1, 2)
+        let mut persister = new_mock_persister();
+
+        let _ = persister.insert_kv(&"key1".to_string(), &vec![b'a', b'c', b'd']);
+        let _ = persister.update_value(&"key1".to_string(), &vec![b'e', b'f', b'g']);
+        assert_eq!(3, persister.last_cursor);
+
+        assert_eq!(vec![b'e', b'f', b'g'], persister.get_value(&"key1".to_string()).unwrap());
+
+        // delete the kv and try to update again
+        let _ = persister.delete_kv(&"key1".to_string());
+        assert_eq!(
+            KVError::KeyDoesNotExist,
+            persister.update_value(&"key1".to_string(), &vec![b'e', b'f', b'g']).unwrap_err()
+        );
+        assert_eq!(0, persister.last_cursor);
+    }
+
+    #[test]
+    fn test_update_value_with_more_space() {
+        let mut persister = new_mock_persister();
+
+        let _ = persister.insert_kv(&"key1".to_string(), &vec![b'a', b'c', b'd']);
+        let _ = persister.update_value(&"key1".to_string(), &vec![b'e', b'f', b'g', b'h']);
+        assert_eq!(4, persister.last_cursor);
+
+        assert_eq!(vec![b'e', b'f', b'g', b'h'], persister.get_value(&"key1".to_string()).unwrap());
+
+        // delete the kv and try to update again
+        let _ = persister.delete_kv(&"key1".to_string());
+        assert_eq!(0, persister.last_cursor);
+    }
+
+    #[test]
+    fn test_update_value_with_middle_space_not_enough() {
+        let mut persister = new_mock_persister();
+
+        let _ = persister.insert_kv(&"key1".to_string(), &vec![b'a', b'c', b'd']);
+        let _ = persister.insert_kv(&"key2".to_string(), &vec![b'e', b'f', b'g']);
+        let _ = persister.insert_kv(&"key3".to_string(), &vec![b'h', b'i', b'j']);
+
+        // try to update middle kv with a bigger value
+        let _ = persister.update_value(&"key2".to_string(), &vec![b'k', b'l', b'm', b'n']);
+        assert_eq!(13, persister.last_cursor);
+
+        assert_eq!(vec![b'k', b'l', b'm', b'n'], persister.get_value(&"key2".to_string()).unwrap());
+
+        // delete the kv and try to update again
+        let _ = persister.delete_kv(&"key2".to_string());
+        assert_eq!(9, persister.last_cursor);
     }
 
     #[test]
     fn delete_kv() {
-        assert_eq!(1, 2)
+        let mut persister = new_mock_persister();
+
+        let _ = persister.insert_kv(&"key1".to_string(), &vec![b'a', b'c', b'd']);
+        let _ = persister.delete_kv(&"key1".to_string());
+        assert_eq!(KVError::KeyDoesNotExist, persister.get_value(&"key1".to_string()).unwrap_err());
+
+        assert_eq!(0, persister.last_cursor);
     }
 
     fn assert_slots_eq(mut file_exp: File, mut file_obt: File, slots: &Vec<Slot>) {
